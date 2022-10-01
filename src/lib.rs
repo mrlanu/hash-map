@@ -4,17 +4,13 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-const DEFAULT_CAPACITY: usize = 4;
+const DEFAULT_CAPACITY: usize = 8;
 const DEFAULT_LOAD_FACTOR: f32 = 0.75;
 
 type LinkedList<K, V> = Option<Box<Node<K, V>>>;
 
 #[derive(Debug)]
-pub struct HashMap<K, V>
-where
-    K: Debug + Eq + PartialEq,
-    V: Debug,
-{
+pub struct HashMap<K, V> {
     table: Vec<LinkedList<K, V>>,
     size: usize,
     load_factor: f32,
@@ -24,8 +20,8 @@ where
 
 impl<K, V> HashMap<K, V>
 where
-    K: Hash + Eq + PartialEq + Debug + Clone,
-    V: Debug + Clone,
+    K: Hash + Eq + PartialEq, //+ Debug + Clone,
+    V: Clone,
 {
     pub fn new() -> Self {
         let threshold = (DEFAULT_CAPACITY as f32 * DEFAULT_LOAD_FACTOR) as u32;
@@ -41,11 +37,11 @@ where
             threshold,
         }
     }
+
     pub fn put(&mut self, new_key: K, new_value: V) -> Option<V> {
         let index = self.index_for(&new_key);
-        println!("Index: {}", index);
         // check if there is the same key already
-        match self.column_iter_mut(index).find(|(k, v)| *k == new_key) {
+        match self.column_iter_mut(index).find(|(k, _v)| *k == new_key) {
             // if so replace its value & return the old one
             Some(pair) => {
                 let old_value = pair.1.clone();
@@ -78,6 +74,32 @@ where
         hash as usize % self.table.len()
     }
 
+    pub fn iter(&self) -> Iter<K, V> {
+        let mut iter = Iter {
+            next: None,
+            index: 0,
+            map: self,
+        };
+
+        loop {
+            if iter.index == self.table.len() {
+                break;
+            }
+
+            match &self.table[iter.index] {
+                Some(node) => {
+                    iter.next = Some(&node);
+                    iter.index += 1;
+                    break;
+                }
+                None => {
+                    iter.index += 1;
+                }
+            }
+        }
+        iter
+    }
+
     fn column_iter_mut(&mut self, index: usize) -> ColumnIterMut<K, V> {
         ColumnIterMut {
             next: self.table[index].as_deref_mut(),
@@ -96,6 +118,39 @@ impl<K, V> Node<K, V> {
         Self {
             pair: (key, value),
             next: None,
+        }
+    }
+}
+
+pub struct Iter<'a, K, V> {
+    next: Option<&'a Node<K, V>>,
+    map: &'a HashMap<K, V>,
+    index: usize,
+}
+impl<'a, K, V> Iterator for Iter<'a, K, V> {
+    type Item = &'a (K, V);
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next {
+            Some(node) => {
+                self.next = node.next.as_deref();
+                Some(&(node.pair))
+            }
+            None => loop {
+                if self.index == self.map.table.len() {
+                    break None;
+                }
+
+                match &self.map.table[self.index] {
+                    Some(node) => {
+                        self.next = node.next.as_deref();
+                        self.index += 1;
+                        break Some(&(node.pair));
+                    }
+                    None => {
+                        self.index += 1;
+                    }
+                };
+            },
         }
     }
 }
@@ -135,5 +190,28 @@ mod tests {
         let old_value = map.put("key_1".to_string(), "value_2".to_string());
         assert_eq!(old_value, Some("value_1".to_string()));
         assert_eq!(map.size(), 2);
+    }
+
+    #[test]
+    fn iter() {
+        let mut map = HashMap::new();
+
+        map.put("a", 17);
+        map.put("b", 78);
+        map.put("c", 777);
+
+        let mut pairs_count = 0;
+
+        for (k, v) in map.iter() {
+            match k {
+                &"a" => assert_eq!(*v, 17),
+                &"b" => assert_eq!(*v, 78),
+                &"c" => assert_eq!(*v, 777),
+                _ => unreachable!(),
+            }
+            pairs_count += 1;
+        }
+
+        assert_eq!(pairs_count, 3);
     }
 }
