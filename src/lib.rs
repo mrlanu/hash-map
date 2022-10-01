@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::mem;
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
@@ -21,7 +22,6 @@ pub struct HashMap<K, V> {
 impl<K, V> HashMap<K, V>
 where
     K: Hash + Eq + PartialEq, //+ Debug + Clone,
-    V: Clone,
 {
     pub fn new() -> Self {
         let threshold = (DEFAULT_CAPACITY as f32 * DEFAULT_LOAD_FACTOR) as u32;
@@ -44,8 +44,7 @@ where
         match self.column_iter_mut(index).find(|(k, _v)| *k == new_key) {
             // if so replace its value & return the old one
             Some(pair) => {
-                let old_value = pair.1.clone();
-                (*pair).1 = new_value;
+                let old_value = mem::replace(&mut pair.1, new_value);
                 return Some(old_value);
             }
             // if none just push new pair
