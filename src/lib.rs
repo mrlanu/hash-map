@@ -1,6 +1,6 @@
 mod linked_list;
 
-use crate::linked_list::LinkedList;
+use crate::linked_list::{Iter as IterLL, LinkedList};
 use std::fmt::Debug;
 use std::mem;
 use std::{
@@ -14,9 +14,11 @@ const DEFAULT_LOAD_FACTOR: f32 = 0.75;
 #[derive(Debug)]
 pub struct HashMap<K, V> {
     pub table: Vec<LinkedList<(K, V)>>,
+    // amount of pairs
     size: usize,
     _load_factor: f32,
-    _capacity: usize,
+    capacity: usize,
+    // hash_map will double its capacity when this variable will be reached
     threshold: usize,
 }
 
@@ -26,13 +28,12 @@ where
     V: Debug,
 {
     pub fn new() -> Self {
-        let threshold = (DEFAULT_CAPACITY as f32 * DEFAULT_LOAD_FACTOR) as usize;
         Self {
             table: Vec::new(),
             size: 0,
-            _capacity: DEFAULT_CAPACITY,
+            capacity: DEFAULT_CAPACITY,
             _load_factor: DEFAULT_LOAD_FACTOR,
-            threshold,
+            threshold: (DEFAULT_CAPACITY as f32 * DEFAULT_LOAD_FACTOR) as usize,
         }
     }
 
@@ -82,6 +83,35 @@ where
         self.size
     }
 
+    pub fn iter(&self) -> Iter<K, V> {
+        let mut iter = None;
+        let mut index = 0;
+
+        // search a first linked_list in the table which has any nodes
+        loop {
+            if index == self.table.len() {
+                break;
+            }
+            match &self.table[index].size() {
+                0 => {
+                    index += 1;
+                }
+                // when got one take a reference on its iter
+                _ => {
+                    iter = Some(self.table[index].iter());
+                    index += 1;
+                    break;
+                }
+            }
+        }
+
+        Iter {
+            index,
+            table: &self.table,
+            iter,
+        }
+    }
+
     fn index_for(&self, key: &K) -> usize {
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
@@ -91,17 +121,21 @@ where
 
     fn resize(&mut self) {
         match self.table.len() {
+            // default resizing
             0 => {
-                println!("N: {}", 0);
                 self.table = (0..DEFAULT_CAPACITY).map(|_| LinkedList::new()).collect();
             }
+            // when this resize method is called after the threshold is reached
             n => {
                 self.threshold = ((n * 2) as f32 * DEFAULT_LOAD_FACTOR) as usize;
+                self.capacity *= 2;
 
+                // replace the old table with new doubled one
                 let mut temp = mem::replace(
                     &mut self.table,
                     (0..n * 2).map(|_| LinkedList::new()).collect(),
                 );
+                // reinsert the old table's values in the new one
                 for i in 0..temp.len() {
                     let t = mem::replace(&mut temp[i], LinkedList::new());
                     t.into_iter().for_each(|pair| {
@@ -111,6 +145,49 @@ where
                     });
                 }
             }
+        }
+    }
+}
+
+pub struct Iter<'a, K, V> {
+    index: usize,
+    table: &'a Vec<LinkedList<(K, V)>>,
+    iter: Option<IterLL<'a, (K, V)>>,
+}
+impl<'a, K, V> Iterator for Iter<'a, K, V> {
+    type Item = &'a (K, V);
+    fn next(&mut self) -> Option<Self::Item> {
+        // have to check if there is some iter
+        // because the method iter() could be called on the empty map
+        if let Some(iter) = &mut self.iter {
+            // check whether this iter has a next node or not
+            match iter.next() {
+                // if so, return the reference on its contain
+                Some(pair) => Some(pair),
+                // if not, search a next list in the hash_map's table
+                None => loop {
+                    // break this loop on the end of Vec (table)
+                    if self.index == self.table.len() {
+                        break None;
+                    }
+                    match &self.table[self.index].size() {
+                        // if the list size is 0 that means that it has no any next node
+                        // just increment index of table
+                        0 => {
+                            self.index += 1;
+                        }
+                        _ => {
+                            // if there is some size replace self.iter to its iter next value
+                            // and return the reference to its contained value
+                            self.iter = Some(self.table[self.index].iter());
+                            self.index += 1;
+                            break self.iter.as_mut().unwrap().next();
+                        }
+                    }
+                },
+            }
+        } else {
+            None
         }
     }
 }
@@ -179,29 +256,35 @@ mod tests {
         assert_eq!(map.table.len(), DEFAULT_CAPACITY * 4);
     }
 
-    // #[test]
-    // fn iter() {
-    //     let mut map = HashMap::new();
-    //
-    //     map.put("a", 17);
-    //     map.put("b", 78);
-    //     map.put("c", 777);
-    //
-    //     let mut pairs_count = 0;
-    //
-    //     for (k, v) in map.iter() {
-    //         match k {
-    //             &"a" => assert_eq!(*v, 17),
-    //             &"b" => assert_eq!(*v, 78),
-    //             &"c" => assert_eq!(*v, 777),
-    //             _ => unreachable!(),
-    //         }
-    //         pairs_count += 1;
-    //     }
-    //
-    //     assert_eq!(pairs_count, 3);
-    // }
-    //
+    #[test]
+    fn iter() {
+        let mut map = HashMap::new();
+
+        let mut pairs_count = 0;
+
+        for (k, v) in map.iter() {
+            pairs_count += 1;
+        }
+
+        assert_eq!(pairs_count, 0);
+
+        map.put("a", 17);
+        map.put("b", 78);
+        map.put("c", 777);
+
+        for (k, v) in map.iter() {
+            match k {
+                &"a" => assert_eq!(*v, 17),
+                &"b" => assert_eq!(*v, 78),
+                &"c" => assert_eq!(*v, 777),
+                _ => unreachable!(),
+            }
+            pairs_count += 1;
+        }
+
+        assert_eq!(pairs_count, 3);
+    }
+
     // #[test]
     // fn into_iter() {
     //     let mut map = HashMap::new();
